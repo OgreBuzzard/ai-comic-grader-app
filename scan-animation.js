@@ -1620,7 +1620,7 @@
       teardown();
     }
 
-    const slotTable = (kind === 'card') ? SLOTS_CARD : (kind === 'corner') ? SLOTS_CORNER : (kind === 'full') ? SLOTS_FULL : (kind === 'restoration') ? SLOTS_RESTORATION : (kind === 'batch') ? SLOTS_BATCH : SLOTS_MAIN;
+    const slotTable = (kind === 'card') ? SLOTS_CARD : (kind === 'corner') ? SLOTS_CORNER : (kind === 'full') ? SLOTS_FULL : (kind === 'restoration') ? SLOTS_RESTORATION : (kind === 'batch' || kind === 'concierge') ? SLOTS_BATCH : SLOTS_MAIN;
     // S20 (#40): 6-image runs (Deep = 4 corners + 2 covers, Full = 6 strips) use
     // a brisker 900ms scan so the longer sequence keeps a snappy rhythm. The
     // 2-image UV run gets the full 2.0s dwell (S22: was 1.0s for 8 images — at
@@ -1630,11 +1630,13 @@
     _lastKind = kind;
     _scanDurationMs = (kind === 'corner' || kind === 'full') ? 900
       : (kind === 'restoration') ? 2000
-      : (kind === 'batch') ? 900          // S22: Deep speed, 10 images, one sweep
+      : (kind === 'batch' || kind === 'concierge') ? 900          // S22: Deep speed, 10 images, one sweep
       : SCAN_DURATION;
 
     // Batch drops 3 coins back-to-back, so the first photo waits for all of them.
-    _firstPhotoDelayMs = (kind === 'batch')
+    // v6.78: the concierge Main + Deep is the same ten-photo sweep with TWO
+    // coins (2 credits), then the ordinary reveal - it is one book, not five.
+    _firstPhotoDelayMs = (kind === 'batch' || kind === 'concierge')
       ? CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME + COIN_STACK_TOTAL
       : FIRST_PHOTO_DELAY;
 
@@ -1695,10 +1697,10 @@
     // visible together, and only then do they drop one at a time — so the user
     // sees "three credits" at a glance instead of having to count three separate
     // drops. Single-credit runs are unchanged.
-    if (kind === 'batch') {
+    if (kind === 'batch' || kind === 'concierge') {
       const t = setTimeout(() => {
         if (cancelToken.cancelled) return;
-        playCoinStack(cancelToken, 3);
+        playCoinStack(cancelToken, kind === 'concierge' ? 2 : 3);
       }, CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME);
       cancelToken._timers.add(t);
     } else {

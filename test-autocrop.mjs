@@ -168,7 +168,9 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
 // ── 8. the wiring in index.html ───────────────────────────────────────────
 ok('the detector is wired into _fitCrop', /_cropAutoOK && !_cropUserMoved/.test(html));
 ok('auto-crop is gated off cards', /_cropAutoOK = !\(formData\.type === "card"/.test(html));
-ok('auto-crop is gated to main slots only', /_cropAutoOK = .*type === "main";/.test(html),
+// v6.78: main slots AND the two interior-cover spreads (whole-object shots).
+// Never corners or other macros.
+ok('auto-crop is gated to main slots and interior covers only', /_cropAutoOK = .*\(type === "main" \|\| type === "interiorCover"\);/.test(html),
   'a bounding box round a corner macro is actively wrong');
 ok('the user-moved latch is armed on cropstart', /cropstart: function\(\) \{ _cropUserMoved = true; \}/.test(html),
   'without it, _fitCrop at 450ms yanks the box back from under the user');

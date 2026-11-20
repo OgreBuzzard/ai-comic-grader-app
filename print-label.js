@@ -685,8 +685,9 @@ export function ensureStylesInjected() {
   .lvm-actions .rg-btn { flex: 1; }
   /* v6.77: Clear Queue shares the row with Save as PDF and Share. Three
      buttons in a phone-width card, so all three tighten a little. */
-  .lvm-actions.three .rg-btn { padding-left: 6px; padding-right: 6px; font-size: 14px; white-space: nowrap; }
-  .lvm-clear-btn.armed { border-color: #a04018 !important; color: #a04018 !important; }
+  /* v6.78, Matt: they did not fit on one line. Save as PDF and Clear Queue
+     each set on two lines. */
+  .lvm-actions.three .rg-btn { padding-left: 6px; padding-right: 6px; font-size: 14px; line-height: 1.1; white-space: normal; }
   .rg-btn-queue-active { font-size: 12px !important; }
 
   /* ── Options toggle row (S12, May 5) ──────────────────────────────────
@@ -3073,9 +3074,9 @@ function renderModal(modal, comic, allItems) {
         </div>
       </div>
       <div class="lvm-actions${_clearQueueCb ? ' three' : ''}">
-        <button class="rg-btn rg-btn-primary rg-btn-md" data-action="print" ${printDisabled ? 'disabled' : ''}>Save as PDF</button>
-        <button class="rg-btn rg-btn-secondary rg-btn-md" data-action="share" ${printDisabled ? 'disabled' : ''}>Share…</button>
-        ${_clearQueueCb ? `<button type="button" class="rg-btn rg-btn-secondary rg-btn-md lvm-clear-btn" data-action="clear-queue">Clear Queue</button>` : ''}
+        <button class="rg-btn rg-btn-primary rg-btn-md" data-action="print" ${printDisabled ? 'disabled' : ''}>${_clearQueueCb ? 'Save as<br>PDF' : 'Save as PDF'}</button>
+        <button class="rg-btn rg-btn-secondary rg-btn-md" data-action="share" ${printDisabled ? 'disabled' : ''}>Share</button>
+        ${_clearQueueCb ? `<button type="button" class="rg-btn rg-btn-secondary rg-btn-md lvm-clear-btn" data-action="clear-queue">Clear<br>Queue</button>` : ''}
       </div>
       ${buyLinkHTML}
     </div>
@@ -3167,25 +3168,16 @@ function renderModal(modal, comic, allItems) {
     handleSavePDF(modal, comic, allItems, 'share');
   });
 
-  // v6.77: CLEAR QUEUE. Two taps, no dialog: the first arms it and says what
-  // will happen, the second clears every book from the queue and closes. (A
-  // confirm dialog would open UNDER this modal - both sit at z-index 3000.)
+  // v6.78, Matt: CLEAR QUEUE clears on one tap and closes.
   const _clrBtn = modal.querySelector('[data-action="clear-queue"]');
   if (_clrBtn) _clrBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     const b = e.currentTarget;
-    if (!b.dataset.armed) {
-      b.dataset.armed = '1';
-      b.textContent = 'Confirm Clear';
-      b.classList.add('armed');
-      setTimeout(() => { if (b.isConnected && b.dataset.armed) { delete b.dataset.armed; b.textContent = 'Clear Queue'; b.classList.remove('armed'); } }, 4000);
-      return;
-    }
     b.disabled = true; b.textContent = 'Clearing\u2026';
     let ok = false;
     try { ok = await _clearQueueCb(); } catch (err) { console.warn('[label] clear queue failed:', err); }
     if (ok) closeModal(modal);
-    else { b.disabled = false; delete b.dataset.armed; b.textContent = 'Clear Queue'; b.classList.remove('armed'); }
+    else { b.disabled = false; b.innerHTML = 'Clear<br>Queue'; }
   });
 
   // v6.38: the explicit close. Same closeModal as the backdrop, so the queue
@@ -3445,7 +3437,7 @@ async function handleSavePDF(modal, currentComic, allItems, intent) {
   // would start a second PDF.
   const saveBtn = modal.querySelector(intent === 'share' ? '[data-action="share"]' : '[data-action="print"]');
   const otherBtn = modal.querySelector(intent === 'share' ? '[data-action="print"]' : '[data-action="share"]');
-  const origLabel = saveBtn ? saveBtn.textContent : 'Save as PDF';
+  const origLabel = saveBtn ? saveBtn.innerHTML : 'Save as PDF';
   if (saveBtn) {
     saveBtn.disabled = true;
     saveBtn.textContent = 'Generating…';
@@ -3462,7 +3454,7 @@ async function handleSavePDF(modal, currentComic, allItems, intent) {
     if (otherBtn) otherBtn.disabled = false;
     if (saveBtn) {
       saveBtn.disabled = false;
-      saveBtn.textContent = origLabel;
+      saveBtn.innerHTML = origLabel;
     }
   }
 }

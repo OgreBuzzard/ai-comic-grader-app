@@ -93,7 +93,7 @@ ok('identity is logged to the timing row', /idOk: !!\(scTitle && scIssue\)/.test
 ok('the gate is evaluated at capture', /const _cg = conciergeGate\(r && r\.title, r && r\.issue\);/.test(html));
 ok('the offer exists', html.includes('function conciergeOffer('));
 ok('it is offered at the slab-check pause, before photos 2-4',
-  /conciergeShouldOffer\(_slab\) && await conciergeOffer\(formData\._conciergeGate\)/.test(html));
+  /const _offer = conciergeShouldOffer\(_slab\);[\s\S]{0,120}if \(_offer && await conciergeOffer\(formData\._conciergeGate\)\)/.test(html));
 
 {
   const modal = html.slice(html.indexOf('function conciergeOffer('),
@@ -119,12 +119,30 @@ ok('accepting extends the walkthrough to the full ten',
   /if \(_conciergeCapture\) \{[\s\S]{0,500}_nextKind = "corner"[\s\S]{0,400}_nextKind = "interiorCover"/.test(html));
 ok('the flag is disarmed when the capture ends',
   html.includes('const _wasConcierge = _conciergeCapture;') && html.includes('if (_conciergeCapture) _conciergeCapture = false;'));
-ok('Main starts itself only on a COMPLETE set',
-  /if \(_m >= 4 && _c >= 4\)[\s\S]{0,300}await assessGrade\(\)/.test(html));
-ok('a short capture stands the run down rather than charging for a partial set',
-  /standing down[\s\S]{0,120}_conciergeRun = false/.test(html));
-ok('the Deep follows the Main automatically',
-  /if \(formData\._conciergeRun\) \{[\s\S]{0,200}_conciergeRun = false;[\s\S]{0,400}assessHighGrade\(\)/.test(html));
+// v6.78 (Matt): the capture no longer starts anything. The user reviews the
+// ten photos and taps MAIN + DEEP; Main then Deep run under ONE scan, the
+// Deep's result is the only one shown, and the pair costs 2 (no Deep refund).
+{
+  const fin = html.slice(html.indexOf('async function cameraFinish('), html.indexOf('function _scrollToCaptureSection('));
+  ok('the capture does NOT start an assessment', !/assessGrade\(/.test(fin) && fin.includes('waiting for MAIN + DEEP'));
+}
+ok('the review button needs all ten photos',
+  /function _conciergeReady\(\)[\s\S]{0,400}m >= 4 && c >= 4 && \(formData\.labelDetected \|\| v >= 2\)/.test(html)
+  && /id="concierge-btn"[^>]*\$\{ready \? "" : "disabled"\}/.test(html));
+ok('the button checks the 2 credits before it starts',
+  /async function runConciergeAssessment\(\)[\s\S]{0,300}< CONCIERGE_COST\) \{ showBuyCredits\(\)/.test(html));
+ok('one scan of all ten at Deep speed',
+  html.includes('runScanAnimation(_conciergeScanPhotos(), "concierge")'));
+ok('the Main result is folded in without a save or a COMPLETE',
+  /if \(_conc\) \{[\s\S]{0,600}_completeAssessmentInner\(\{ noSave: true \}\)[\s\S]{0,400}assessHighGrade\(\{ concierge: true \}\)/.test(html));
+ok('the Deep reuses the scan shell instead of starting a second animation',
+  html.includes('const scanController = _conc ? { promise: Promise.resolve(), cancel: () => {} }'));
+ok('no Deep refund inside the 2-credit pair',
+  html.includes('var _deepRefundEligible = !_conc && '));
+ok('the old auto-chained Deep after COMPLETE is gone',
+  !/\[concierge\] Main complete - running the Deep/.test(html));
+ok('corners are shot TL, TR, BR, BL',
+  html.includes('nextSlots = _cornerShootOrder(_conciergeEmptySlots("corner"))'));
 
 console.log('\n  ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

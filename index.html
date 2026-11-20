@@ -932,28 +932,44 @@ onAuthStateChanged(auth, async user => {
       filter: brightness(0.95);
       transform: scale(0.97);
     }
-    /* v6.77, Matt: THE BOTTOM BAR. Start Grading moves here from the header
-       (thumb's reach, and it is the button people tap most), with the print
-       queue to its right: the printer toggle shows/hides the per-row print
-       icons and carries the queue count, and PRINT opens the sheet viewer.
-       The left third is kept empty on purpose - it is where Gallery goes. */
+    /* v6.78, Matt: THE BOTTOM BAR, one per view. Four equal columns so the
+       controls sit in the same places from view to view:
+         List    Gallery  .        printer  PRINT
+         Detail  Back     Edit     label    PRINT
+         Edit    Back     Save     label    PRINT (greyed)
+       Start Grading is back in the top bar. Every control is 48px tall. */
     #bottom-bar {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 100;
       background: #ffffff; border-top: 1px solid #d8d0c8;
       padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 8px);
-      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px;
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: 10px;
       box-shadow: 0 -2px 10px rgba(40,30,10,0.06);
     }
     #bottom-bar.kb-hidden { display: none !important; }
-    #bottom-bar .bb-right { display: flex; align-items: center; justify-content: flex-start; gap: 8px; }
+    /* v6.78: and while an assessment's scan stage is up - it is see-through at
+       the bottom, and the bar showed under the COMPLETE button. */
+    body:has(.rg-scan-stage) #bottom-bar { display: none !important; }
+    #bottom-bar .bb-cell { display: flex; align-items: center; min-width: 0; }
+    #bottom-bar .bb-c1 { justify-content: flex-start; }
+    #bottom-bar .bb-c2 { justify-content: flex-start; }
+    #bottom-bar .bb-c3 { justify-content: flex-start; }
+    #bottom-bar .bb-c4 { justify-content: flex-end; padding-right: 4px; }
+    .bb-btn {
+      height: 48px; min-width: 0; padding: 0 14px; border-radius: 12px; cursor: pointer;
+      border: 1.5px solid #c8c0b4; background: #ffffff; color: #2a2724;
+      font: 800 16px/1 'Barlow Condensed', sans-serif; letter-spacing: 1px;
+      -webkit-tap-highlight-color: transparent; white-space: nowrap;
+    }
+    .bb-btn:disabled { opacity: 0.4; cursor: default; }
+    .bb-btn.bb-gold { background: #c8a96e; border-color: #a88a4e; color: #1a1008; }
     #bb-print-toggle {
-      position: relative; width: 46px; height: 46px; border-radius: 12px;
+      position: relative; width: 48px; height: 48px; border-radius: 12px;
       border: 1.5px solid #c8c0b4; background: #ffffff; cursor: pointer; padding: 0;
       display: inline-flex; align-items: center; justify-content: center;
       -webkit-tap-highlight-color: transparent;
     }
-    #bb-print-toggle.on { background: #2a2724; border-color: #2a2724; }
-    #bb-print-toggle svg { width: 30px; height: 30px; }
+    #bb-print-toggle.on { background: #7aa838; border-color: #7aa838; }
+    #bb-print-toggle svg { width: 32px; height: 32px; }
     #bb-print-count {
       position: absolute; top: -7px; right: -7px; min-width: 20px; height: 20px; padding: 0 5px;
       border-radius: 10px; background: #c97a14; color: #fff; box-sizing: border-box;
@@ -961,12 +977,20 @@ onAuthStateChanged(auth, async user => {
       box-shadow: 0 0 0 2px #fff;
     }
     #bb-print-go {
-      height: 46px; padding: 0 14px; border-radius: 12px; cursor: pointer;
+      height: 48px; width: 100%; max-width: 104px; padding: 0 18px; border-radius: 12px; cursor: pointer;
       border: 1.5px solid #a8701a;
       background: linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);
-      color: #0d0d0f; font: 800 16px/1 'Barlow Condensed', sans-serif; letter-spacing: 1.5px;
+      color: #0d0d0f; font: 800 17px/1 'Barlow Condensed', sans-serif; letter-spacing: 1.5px;
     }
     #bb-print-go:disabled { opacity: 0.4; cursor: default; }
+    /* The label thumbnail: the real Square label, drawn by print-label.js. */
+    #bb-label-thumb {
+      width: 48px; height: 48px; border-radius: 8px; overflow: hidden; padding: 0;
+      border: 1.5px solid #c8c0b4; background: #ffffff; cursor: pointer;
+      position: relative; display: inline-block; font-style: normal;
+    }
+    #bb-label-thumb:disabled { cursor: default; }
+    #bb-label-slot { position: absolute; inset: 0; display: block; font-style: normal; }
     body.has-bottom-bar #main { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
     .btn-gear {
       background: none; border: none; color: #8a7a6a; cursor: pointer;
@@ -2284,6 +2308,10 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn" style="display:none">Buy</button>
       </div>
 
+      <button class="btn btn-topbar btn-grade" onclick="gradeFromHeader()" id="grade-btn" aria-label="Start Grading" title="Start Grading" style="display:none">
+        <img src="assets/ghosts/Front_Cover.jpg" alt="" decoding="async" class="grade-btn-thumb">
+        <span>Start<br>Grading</span>
+      </button>
       <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">
         
         <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
@@ -2295,15 +2323,10 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
   <div id="main"></div>
 </div>
 <div id="bottom-bar" style="display:none">
-  <div class="bb-left"></div>
-  <button class="btn btn-topbar btn-grade" onclick="gradeFromHeader()" id="grade-btn" aria-label="Start Grading" title="Start Grading">
-    <img src="assets/ghosts/Front_Cover.jpg" alt="" decoding="async" class="grade-btn-thumb">
-    <span>Start<br>Grading</span>
-  </button>
-  <div class="bb-right" id="bb-print" style="visibility:hidden">
-    <button type="button" id="bb-print-toggle" onclick="togglePrintModeFromBar()" aria-label="Show print queue buttons" title="Show or hide the add-to-print buttons"><span id="bb-print-icon"></span><span id="bb-print-count" style="display:none">0</span></button>
-    <button type="button" id="bb-print-go" onclick="printQueueSheet()">PRINT</button>
-  </div>
+  <div class="bb-cell bb-c1" id="bb-c1"></div>
+  <div class="bb-cell bb-c2" id="bb-c2"></div>
+  <div class="bb-cell bb-c3" id="bb-c3"></div>
+  <div class="bb-cell bb-c4" id="bb-c4"></div>
 </div>
 
 <div id="app-confirm-overlay" style="display:none" onclick="if(event.target===this)_appConfirmResolve(false)">
@@ -4531,6 +4554,9 @@ function stickTierUnlocks(item) {
 
 // Sticky-aware display predicates. Once latched, true forever.
 function showDeepTier(item) {
+  // v6.78: a concierge book shows its Deep slots before any grade exists, so
+  // the user can check and replace all ten photos before starting.
+  if (item && item === formData && item._conciergeRun && !_assessed) return true;
   return !!(item && (item.deepUnlocked === true || item.highGradeUnlocked === true || isDeepAssessmentComplete(item)));
 }
 function showFullTier(item) {
@@ -5076,7 +5102,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "addedLabelNotes", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "gradeAtCeiling", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "binding", "bindingBasis", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "deepRefundAt", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason", "photograderPreFull", "format", "adultContent", "cleanUnlocked", "cleanAssessmentRan", "cleanRuns", "cleanBeforeImages", "cleanBeforeMeta", "cleanBeforeResult", "cleanAfterImages", "cleanAfterMeta", "cleanAfterResult", "cleanComparison" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "addedLabelNotes", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "gradeAtCeiling", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "binding", "bindingBasis", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "deepRefundAt", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason", "photograderPreFull", "format", "adultContent", "cleanUnlocked", "cleanAssessmentRan", "cleanRuns", "cleanBeforeImages", "cleanBeforeMeta", "cleanBeforeResult", "cleanAfterImages", "cleanAfterMeta", "cleanAfterResult", "cleanComparison", "conciergeGate" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -5505,27 +5531,58 @@ function _setBottomBar(on) {
   document.body.classList.toggle("has-bottom-bar", !!on);
   if (on) renderBottomBar();
 }
-// The print half of the bar. Hidden until the user has a graded book (a new
-// user has nothing to label); the count is the number of books queued.
+// v6.78: the bar is drawn per view (see the CSS above for the layout). It is
+// rebuilt whenever its content changes; the label thumbnail is only redrawn
+// when the book it shows changes, because drawing it loads the label module.
+let _bbKey = "", _bbThumbKey = "";
+function _bbItem() {
+  if (view === "detail") return selected || null;
+  if (view === "add" && formData && formData.id) return (items || []).find(c => c.id === formData.id) || null;
+  return null;
+}
 function renderBottomBar() {
   try {
-    const wrap = document.getElementById("bb-print");
-    if (!wrap) return;
-    const graded = (items || []).some(c => c.roboGrade && c.id !== SAMPLE_COMIC_ID);
-    wrap.style.visibility = graded ? "visible" : "hidden";
-    const n = (items || []).filter(c => c.inPrintQueue === true && c.roboGrade && c.id !== SAMPLE_COMIC_ID).length;
+    const c = [1, 2, 3, 4].map(i => document.getElementById("bb-c" + i));
+    if (!c[0]) return;
+    const sample = SAMPLE_COMIC_ID;
+    const graded = (items || []).some(x => x.roboGrade && x.id !== sample);
+    const n = (items || []).filter(x => x.inPrintQueue === true && x.roboGrade && x.id !== sample).length;
     const on = _printModeOn();
-    const tog = document.getElementById("bb-print-toggle");
-    if (tog) {
-      tog.classList.toggle("on", on);
-      tog.setAttribute("aria-pressed", on ? "true" : "false");
+    const it = _bbItem();
+    const isEdit = view === "add";
+    const isSample = !!(it && it._isSample);
+    const labelOk = !!(it && it.roboGrade && it.type !== "card" && !isSample);
+    const saveOff = !(formData && formData.title && formData.title.trim());
+    const key = [view, graded, n, on, it ? it.id : "", labelOk, isSample, isEdit ? saveOff : "", isEdit && formData ? !!formData.id : ""].join("|");
+    if (key !== _bbKey) {
+      _bbKey = key;
+      if (view === "list") {
+        c[0].innerHTML = `<button type="button" class="bb-btn" id="bb-gallery" disabled title="Coming soon">Gallery</button>`;
+        c[1].innerHTML = "";
+        c[2].innerHTML = graded ? `<button type="button" id="bb-print-toggle" class="${on ? "on" : ""}" aria-pressed="${on}" onclick="togglePrintModeFromBar()" aria-label="Show print queue buttons" title="Show or hide the add-to-print buttons">${on ? PRINT_ICON_SVG.replace("stroke:#7aa838", "stroke:#ffffff") : PRINT_ICON_SVG}<span id="bb-print-count" style="${n ? "" : "display:none"}">${n}</span></button>` : "";
+        c[3].innerHTML = graded ? `<button type="button" id="bb-print-go" onclick="printQueueSheet()" ${n ? "" : "disabled"}>PRINT</button>` : "";
+      } else {
+        const id = it ? esc(it.id) : "";
+        c[0].innerHTML = `<button type="button" class="bb-btn" onclick="${isEdit ? "cancelForm()" : "showList()"}">\u2190 Back</button>`;
+        if (isEdit) {
+          c[1].innerHTML = `<button type="button" class="bb-btn bb-gold" id="save-btn-top" onclick="submitForm()" ${saveOff ? "disabled" : ""}>${formData && formData.id ? "Save" : "Add"}</button>`;
+        } else {
+          c[1].innerHTML = isSample ? "" : `<button type="button" class="bb-btn bb-gold" onclick="showEdit('${id}')">Edit</button>`;
+        }
+        c[2].innerHTML = labelOk ? `<button type="button" id="bb-label-thumb" ${isEdit ? "disabled" : `onclick="printLabel('${id}')"`} aria-label="Label preview"><i id="bb-label-slot"></i></button>` : "";
+        c[3].innerHTML = (isEdit || labelOk) ? `<button type="button" id="bb-print-go" ${isEdit || !labelOk ? "disabled" : `onclick="printLabel('${id}')"`}>PRINT</button>` : "";
+        _bbThumbKey = "";
+      }
     }
-    const icon = document.getElementById("bb-print-icon");
-    if (icon) icon.innerHTML = on ? PRINT_ICON_SVG.replace("stroke:#7aa838", "stroke:#ffffff") : PRINT_ICON_SVG.replace("stroke:#7aa838", "stroke:#2a2724");
-    const cnt = document.getElementById("bb-print-count");
-    if (cnt) { cnt.textContent = String(n); cnt.style.display = n ? "" : "none"; }
-    const go = document.getElementById("bb-print-go");
-    if (go) go.disabled = !n;
+    // The label thumbnail, redrawn only when the book or its grade changes.
+    const slot = document.getElementById("bb-label-slot");
+    if (slot && it) {
+      const tk = it.id + "|" + (it.roboGradeId || "") + "|" + (it.score || "") + "|" + (it.title || "") + "|" + (it.issue || "");
+      if (tk !== _bbThumbKey) {
+        _bbThumbKey = tk;
+        _preloadLabelModule().then(m => m.renderLabelThumb && m.renderLabelThumb(slot, it)).catch(() => {});
+      }
+    }
   } catch (e) {}
 }
 function _printModeOn() { return _printOptInSession || window._printOptIn === true; }
@@ -5564,6 +5621,7 @@ function refreshHeaderControls() {
     if (buyBtn) buyBtn.style.display = "none";
     if (addBtn) addBtn.style.display = "none";
     if (placeholder) placeholder.style.display = "";
+    if (gradeBtn) gradeBtn.style.display = "none";
     _setBottomBar(false);
   } else {
     if (coinBtn) coinBtn.style.display = "";
@@ -5573,6 +5631,7 @@ function refreshHeaderControls() {
       addBtn.style.visibility = "visible";
     }
     if (placeholder) placeholder.style.display = "none";
+    if (gradeBtn) gradeBtn.style.display = "";
     _setBottomBar(true);
   }
 }
@@ -7271,7 +7330,9 @@ function showDetail(id) {
   if (_ab) _ab.style.visibility = "hidden";
   const cost = totalCost(selected);
   const isSample = selected._isSample === true;
-  let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px">\n    <button class="btn-ghost" onclick="showList()">← Back</button>\n    ${!isSample ? `<button class="btn btn-gold" onclick="showEdit('${esc(selected.id)}')">Edit</button>` : ""}\n  </div>\n  <div class="card" style="margin-top:4px;background:#fff">`;
+  // v6.78: Back and Edit live in the bottom bar now; the entry starts with
+  // the title line.
+  let html = `<div class="card" style="margin-top:10px;background:#fff">`;
   if (isSample) {
     html += `<div style="background:#12200a;border:1px solid #3a5818;border-radius:10px;padding:12px 14px;margin-bottom:14px">\n        <div style="font-size:12px;font-weight:800;color:#9abf60;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px">Sample Entry</div>\n        <div style="font-size:12px;color:#cfe0b8;line-height:1.5">This is an example of what a graded book looks like. Add your first book to clear it, or tap Delete below to remove it now.</div>\n      </div>`;
   }
@@ -7772,7 +7833,9 @@ function showDetail(id) {
     // the slot the old Defect List button had and opens the SAME label viewer
     // the List view uses, seeded on this one book, so the user picks a style
     // and gets the Avery-positioned PDF that flow already produces.
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')"><img src="assets/Summary_Image_Placeholder.png" alt="" decoding="async" class="action-btn-thumb"><span>Summary<br>Image</span></button>\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb btn-thumb-right" id="print-label-btn" onclick="printLabel('${esc(selected.id)}')"><span>Print<br>Label</span><i class="action-btn-thumb action-btn-thumb-sq" id="print-label-thumb" style="position:relative;overflow:hidden;background:#fff;display:inline-block;font-style:normal"></i></button>\n    </div>`;
+    // v6.78: Print Label is gone from here - the bottom bar carries the label
+    // thumbnail and PRINT. Summary Image sits alone, centred, half width.
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)"><img src="assets/Summary_Image_Placeholder.png" alt="" decoding="async" class="action-btn-thumb"><span>Summary<br>Image</span></button>\n    </div>`;
   }
   html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
   document.getElementById("main").innerHTML = html;
@@ -7786,16 +7849,7 @@ function showDetail(id) {
   // the detail view is already on screen and does not wait for it.
   _ebayAsksScan();
   _reviewMaybeAsk();
-  // v6.76: the Print Label button shows THIS book's real label, drawn by
-  // print-label.js (loaded here rather than on first print; it is cached after).
-  // The slot is an <i>, not a <span>: `.btn-with-thumb > span` is flex:1 (it
-  // centres the button's text), and a span slot grew to twice its width.
-  // An <i> is italic by default and the label inherited it - hence the
-  // font-style:normal on the slot.
-  try {
-    const _lt = document.getElementById("print-label-thumb");
-    if (_lt && selected) _preloadLabelModule().then(m => m.renderLabelThumb && m.renderLabelThumb(_lt, selected)).catch(() => {});
-  } catch (e) {}
+  renderBottomBar();
 }
 
 window.forceImgReflow = function(imgEl) {
@@ -10131,7 +10185,15 @@ async function _exRun(btnId, item, renderer, slug) {
   // and not return until the view re-rendered.
   const slot = (btn && btn.querySelector("span")) || btn;
   const label = slot ? slot.innerHTML : "";
-  if (btn) { btn.disabled = true; slot.textContent = "Rendering…"; }
+  // v6.78, Matt: the button grew while it said "Rendering…". Pin its size for
+  // the render and set the word small enough to fit the label's space.
+  const _pin = btn ? { w: btn.style.width, h: btn.style.height, fs: slot.style.fontSize } : null;
+  if (btn) {
+    const r = btn.getBoundingClientRect();
+    if (r.width) { btn.style.width = r.width + "px"; btn.style.height = r.height + "px"; }
+    btn.disabled = true; slot.style.fontSize = "11px"; slot.textContent = "Rendering…";
+  }
+  const _unpin = () => { if (btn && _pin) { btn.style.width = _pin.w; btn.style.height = _pin.h; slot.style.fontSize = _pin.fs; } };
   try {
     // A face that has not finished loading when fillText runs falls back
     // silently and the image ships in the wrong typeface with no error.
@@ -10152,7 +10214,7 @@ async function _exRun(btnId, item, renderer, slug) {
     // to a share sheet whose promise may never settle (see there). Measured on
     // desktop Chrome: render 224ms, PNG encode 413ms, then the button sat on
     // "Rendering…" indefinitely because navigator.share() never resolved.
-    if (btn) { btn.disabled = false; slot.innerHTML = label; }
+    if (btn) { btn.disabled = false; slot.innerHTML = label; _unpin(); }
     // v6.62, Matt: "when I tap the Summary Image button, I get an option to
     // save it to my photo library, but I don't get to see the actual image
     // before doing so." It used to go straight to the share sheet, so the
@@ -10171,7 +10233,7 @@ async function _exRun(btnId, item, renderer, slug) {
       ? "Couldn't build the image because one of the cover photos wouldn't load for export. Please try again in a moment."
       : "Couldn't build the image. Please try again.");
   } finally {
-    if (btn) { btn.disabled = false; slot.innerHTML = label; }
+    if (btn) { btn.disabled = false; slot.innerHTML = label; _unpin(); }
   }
 }
 
@@ -10746,6 +10808,7 @@ function isUploadInFlight() { return _uploadsInFlight > 0; }
 // promise callbacks, and re-rendering the whole form under the user mid-typing
 // would throw away anything they had in an unsaved field.
 function refreshSaveButtonLock() {
+  try { renderBottomBar(); } catch (e) {}
   const btn = document.getElementById("save-btn");
   if (!btn) return;
   const busy = isUploadInFlight();
@@ -12086,6 +12149,50 @@ function _conciergeEmptySlots(kind) {
   const v = formData.interiorCoverImages || [];
   return [ 0, 1 ].filter(i => !v[i]);
 }
+// v6.78: corners are shot TL, TR, BR, BL - round the book, the same order as
+// every other corner walkthrough (CAMERA_CAPTURE_ORDER_CORNER). The concierge
+// chain was handing the camera the slots in array order, TL TR BL BR.
+function _cornerShootOrder(slots) {
+  const ord = CAMERA_CAPTURE_ORDER_CORNER;
+  return slots.slice().sort((a, b) => ord.indexOf(a) - ord.indexOf(b));
+}
+
+// The ten photos in the order the combined scan plays them:
+// front, back, interior, spine, TL, TR, BL, BR, interior front, interior back
+// (scan-animation.js SLOTS_BATCH indexes them and plays the corners TL TR BR BL).
+function _conciergeScanPhotos() {
+  const m = formData.images || [], c = formData.cornerImages || [], v = formData.interiorCoverImages || [];
+  return [ m[0], m[1], m[2], m[3], c[0], c[1], c[2], c[3], formData.labelDetected ? null : v[0], formData.labelDetected ? null : v[1] ];
+}
+function _conciergeReady() {
+  const m = (formData.images || []).filter(Boolean).length;
+  const c = (formData.cornerImages || []).filter(Boolean).length;
+  const v = (formData.interiorCoverImages || []).filter(Boolean).length;
+  return m >= 4 && c >= 4 && (formData.labelDetected || v >= 2);
+}
+// v6.78, Matt: after the ten photos and the crops, NOTHING starts by itself.
+// The user checks the photos, replaces any by tapping its slot, and starts the
+// pair with this button. It sits where the Deep button would be, below all ten.
+function _conciergeBtnHtml() {
+  const ready = _conciergeReady() && !assessing;
+  const have = (formData.images || []).filter(Boolean).length + (formData.cornerImages || []).filter(Boolean).length + (formData.labelDetected ? 0 : (formData.interiorCoverImages || []).filter(Boolean).length);
+  const need = formData.labelDetected ? 8 : 10;
+  return `<div style="display:flex;flex-direction:column;align-items:center;margin-top:12px;gap:6px">
+    <button id="concierge-btn" class="rg-btn rg-btn-assess rg-btn-silver${assessing ? " assessing" : ""}" onclick="runConciergeAssessment()" ${ready ? "" : "disabled"}>${assessing ? "Assessing…" : `MAIN + DEEP ASSESSMENT${have < need ? ` (${have}/${need})` : ""}`}</button>
+    <div style="font-size:12px;color:#6a7a5a">${CONCIERGE_COST} credits</div>
+  </div>`;
+}
+async function runConciergeAssessment() {
+  if (assessing || !_conciergeReady()) return;
+  if (window._userCredits !== undefined && window._userCredits < CONCIERGE_COST) { showBuyCredits(); return; }
+  const b = document.getElementById("concierge-btn");
+  if (b) { b.disabled = true; b.textContent = "Preparing\u2026"; }
+  console.log("[concierge] start - Main then Deep, one scan");
+  await assessGrade({ concierge: true });
+  // Whatever happened, the review state is over: the Main has run (or failed
+  // and said so), and from here the ordinary buttons apply.
+  formData._conciergeRun = false;
+}
 // ── end concierge gate ────────────────────────────────────────────────────
 
 function _publicEligibleOwnership(own) {
@@ -12504,7 +12611,8 @@ function showResultPreview(cgc, psa) {
   return mountResults(cgc, psa);
 }
 
-async function assessHighGrade() {
+async function assessHighGrade(opts) {
+  const _conc = !!(opts && opts.concierge);
   const imgs = (formData.images || []).filter(Boolean);
   const corners = (formData.cornerImages || []).filter(Boolean);
   // Slabbed books only ever capture front + back (interior + raking are skipped),
@@ -12565,7 +12673,9 @@ async function assessHighGrade() {
     ...(formData.labelDetected ? [] : (formData.interiorCoverImages || []).filter(Boolean).slice(0, 2))
   ];
   _capturePrevAssessResult(); // S20: Deep revises the Main grade — show it sliding in
-  const scanController = window.RobograderScan ? window.RobograderScan.runScanAnimation(_deepScanPhotos, "corner") : {
+  // v6.78: in a concierge run the ten-photo scan has already played; the
+  // shell stays up and the Deep's steps run in it.
+  const scanController = _conc ? { promise: Promise.resolve(), cancel: () => {} } : window.RobograderScan ? window.RobograderScan.runScanAnimation(_deepScanPhotos, "corner") : {
     promise: Promise.resolve(),
     cancel: () => {}
   };
@@ -12805,7 +12915,8 @@ async function assessHighGrade() {
     // S22: refund the Deep credit only the FIRST time a re-run fails to improve.
     // deepRefundUsed then latches (persisted via onAssessmentSuccess->submitForm),
     // so all later re-runs are charged — no endless refunded re-rolls.
-    var _deepRefundEligible = !_deepImproved && !formData.deepRefundUsed;
+    // v6.78: not in a concierge run - the user agreed to 2 credits for the pair.
+    var _deepRefundEligible = !_conc && !_deepImproved && !formData.deepRefundUsed;
     window._creditRefunded = _deepRefundEligible;
     if (_deepRefundEligible) {
       formData.deepRefundUsed = true;
@@ -15596,7 +15707,7 @@ async function completeAssessment() {
   }
 }
 
-async function _completeAssessmentInner() {
+async function _completeAssessmentInner(opts) {
   if (!_pendingAssessResult) return;
   const {cgc: cgc, psa: psa} = _pendingAssessResult;
   // S22: capture the book identity BEFORE it is overwritten from the new scan —
@@ -15833,6 +15944,10 @@ async function _completeAssessmentInner() {
   }
   _assessed = true;
   _pendingAssessResult = null;
+  // v6.78: the concierge run applies the Main's result to the book and goes
+  // straight on to the Deep - no save, no COMPLETE tap in between. The one
+  // save happens when the Deep's COMPLETE is tapped.
+  if (opts && opts.noSave) return !!(formData.title && formData.title.trim());
   if (!formData.title?.trim()) {
     if (window.RobograderScan && window.RobograderScan.dismiss) {
       window.RobograderScan.dismiss();
@@ -15851,23 +15966,6 @@ async function _completeAssessmentInner() {
   console.log("[complete] submitForm done in", Date.now() - _tComplete, "ms");
   if (window.RobograderScan && window.RobograderScan.dismiss) {
     window.RobograderScan.dismiss();
-  }
-  // v6.66, concierge step 5, second half. The user bought Main AND Deep in one
-  // decision, so the Deep follows on its own the moment the Main is finished
-  // and saved. Flag off FIRST - whatever happens next, this must never fire
-  // twice, and a failed Deep leaves the ordinary RUN DEEP button exactly where
-  // it always is.
-  if (formData._conciergeRun) {
-    formData._conciergeRun = false;
-    const _c = (formData.cornerImages || []).filter(Boolean).length;
-    if (_c >= 4) {
-      console.log("[concierge] Main complete - running the Deep");
-      setTimeout(function () {
-        try { assessHighGrade(); } catch (e) { console.warn("[concierge] Deep failed to start:", e); }
-      }, 400);
-    } else {
-      console.log("[concierge] no corner macros at Main completion - Deep not started");
-    }
   }
 }
 
@@ -16337,7 +16435,8 @@ async function completeCardAssessment() {
   else showList();
 }
 
-async function assessGrade() {
+async function assessGrade(opts) {
+  const _conc = !!(opts && opts.concierge);
   const imgs = (formData.images || []).filter(Boolean);
   if (imgs.length === 0) {
     alert("Add at least one photo first.");
@@ -16374,7 +16473,7 @@ async function assessGrade() {
     return;
   }
   const _isReassessOfAssessed = !!(formData.id && formData.roboGradeId);
-  if (!formData._bypassDuplicateCheck && !_isReassessOfAssessed) {
+  if (!_conc && !formData._bypassDuplicateCheck && !_isReassessOfAssessed) {
     const dup = await findDuplicateAssessment(formData.images, formData.id);
     if (dup) {
       const dupGrade = dup.roboGrade?.score ?? "?";
@@ -16403,7 +16502,9 @@ async function assessGrade() {
     _assessBtn.style.opacity = "0.75";
   }
   _capturePrevAssessResult(); // S20: Re-Assess shows the prior grade sliding in (null on a first assessment)
-  const scanController = window.RobograderScan ? window.RobograderScan.runScanAnimation(formData.images || []) : {
+  // v6.78: the concierge run scans all TEN photos once, at Deep speed, with two
+  // coins - one animation for the Main and the Deep together.
+  const scanController = window.RobograderScan ? (_conc ? window.RobograderScan.runScanAnimation(_conciergeScanPhotos(), "concierge") : window.RobograderScan.runScanAnimation(formData.images || [])) : {
     promise: Promise.resolve(),
     cancel: () => {}
   };
@@ -16587,6 +16688,18 @@ async function assessGrade() {
     window._pendingRoboGrade = cgc._roboGrade || null;
     // S22: a paid assessment on this book refills the 3 free UV Checks.
     resetUvCheckAllowance();
+    if (_conc) {
+      // v6.78: no Main result screen. Fold the Main into the book and run the
+      // Deep under the same scan shell; the Deep's result is the one shown.
+      onAssessmentSuccess(unified);
+      _reviewNoteMain();
+      const _ok = await _completeAssessmentInner({ noSave: true });
+      assessing = false;
+      if (!_ok) throw new Error("Robograder couldn't read this book's title, so the Deep didn't run and wasn't charged. Add the title and save to keep the Main result.");
+      console.log("[concierge] Main applied - running the Deep");
+      await assessHighGrade({ concierge: true });
+      return;
+    }
     mountResults(cgc, psa);
     onAssessmentSuccess(unified);
     _reviewNoteMain();
@@ -16896,9 +17009,9 @@ function renderForm() {
     return `<span style="display:inline-flex;align-items:center"><button class="treatment-btn" style="background:${bg};border-color:${bc};color:${col}" onclick="cycleTreatment('${key}')">${txt}</button>${cancelBtn}</span>`;
   }
   const _isCardForm = formData.type === "card" || !!formData._isCard || !!(formData._slabDetect && formData._slabDetect.isCard);
-  const _saveLabelTop = formData.id ? "Save" : "Add";
-  const _saveDisabledTop = formData.title && formData.title.trim() ? "" : "disabled";
-  let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>\n  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit ? "Edit Book" : "Add Book"}</h2>\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    \x3c!-- v6.31: the identity header is at the TOP of Edit, above the\n         ownership bar, which is where it belongs whether or not this view\n         ever gets tabs: "what book am I looking at" should not be several\n         thousand pixels below the photos of it. Same function Detail\n         renders, so the two cannot drift. Added Label Notes sits directly\n         under it. Neither appears until an assessment exists - before that\n         the editable Title / Issue / Pub Date / Publisher grid below is the\n         only identity the book has. --\x3e\n    ${formData.roboGrade ? `<div>${renderIdentityHeader(formData)}</div>\n    ${renderAddedLabelNotesField()}` : ""}\n    ${ownershipSegmentForForm()}\n    ${formData.roboGrade ? (() => { const _ip = buildIntegrityPill(formData, true); return _ip ? `<div style="display:flex;justify-content:flex-end;margin-bottom:2px">${_ip}</div>` : ""; })() : ""}\n    <div>\n      <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">MAIN ASSESSMENT PHOTOS${formData.labelDetected ? ` <span style="color:#9a8a7a;font-weight:600">(graded slab)</span>` : ""}</div>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
+  // v6.78: Back and Save are in the bottom bar. Edit starts with the title
+  // line; Add (no title line yet) keeps its heading.
+  let html = `${isEdit ? `<div style="height:10px"></div>` : `<h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">Add Book</h2>`}\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    \x3c!-- v6.31: the identity header is at the TOP of Edit, above the\n         ownership bar, which is where it belongs whether or not this view\n         ever gets tabs: "what book am I looking at" should not be several\n         thousand pixels below the photos of it. Same function Detail\n         renders, so the two cannot drift. Added Label Notes sits directly\n         under it. Neither appears until an assessment exists - before that\n         the editable Title / Issue / Pub Date / Publisher grid below is the\n         only identity the book has. --\x3e\n    ${formData.roboGrade ? `<div>${renderIdentityHeader(formData)}</div>\n    ${renderAddedLabelNotesField()}` : ""}\n    ${ownershipSegmentForForm()}\n    ${formData.roboGrade ? (() => { const _ip = buildIntegrityPill(formData, true); return _ip ? `<div style="display:flex;justify-content:flex-end;margin-bottom:2px">${_ip}</div>` : ""; })() : ""}\n    <div>\n      <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">MAIN ASSESSMENT PHOTOS${formData.labelDetected ? ` <span style="color:#9a8a7a;font-weight:600">(graded slab)</span>` : ""}</div>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
     const _isCardForm = formData.type === "card" || !!formData._isCard || !!(formData._slabDetect && formData._slabDetect.isCard);
     const slotLabels = _isCardForm
       ? [ "Front", "Back", "Top Front", "Bottom Front" ]
@@ -16908,12 +17021,13 @@ function renderForm() {
       return img ? `<div class="drag-slot" draggable="true"\n                  ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${img}"${_isCardForm ? ` style="width:100%;aspect-ratio:${i < 2 ? '5/7' : '1/1'};object-fit:cover;display:block;border-radius:4px"` : ''}>\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  ${_isCardForm ? `<div style="width:100%;aspect-ratio:${i < 2 ? '5/7' : '1/1'};background:#161616;border-radius:4px"></div>` : `<img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">`}\n                  <div style="position:absolute;inset:0;pointer-events:none;">\n                    <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>\n                  </div>\n                 </div>`;
     };
     return formData.labelDetected ? `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n          ` : `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n            ${_isCardForm ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${renderSlot(2)}${renderSlot(3)}</div>` : `${renderSlot(2)}\n            ${renderSlot(3)}`}\n          `;
-  })()}\n      </div>\n      ${_preAssessPGPanel() || ""}\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? (_isCardForm ? "RE-ASSESS GRADE" : "RE-RUN MAIN ASSESSMENT") : "ASSESS GRADE"}</button></div>\n      ${_cardDeepSectionHtml(formData)}${(!_isCardForm && showDeepTier(formData)) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div id="deep-corner-section" style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
+  })()}\n      </div>\n      ${_preAssessPGPanel() || ""}\n      ${(formData._conciergeRun && !_assessed) ? "" : `<div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? (_isCardForm ? "RE-ASSESS GRADE" : "RE-RUN MAIN ASSESSMENT") : "ASSESS GRADE"}</button></div>`}\n      ${_cardDeepSectionHtml(formData)}${(!_isCardForm && showDeepTier(formData)) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div id="deep-corner-section" style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
     const cornerLabels = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
     const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
     const img = (formData.cornerImages || [])[i];
     return img ? `<div class="drag-slot" draggable="true" style="aspect-ratio:2/3"\n                  ondragstart="cornerDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"\n                  onclick="tapSlot(${i},'corner')">\n                  <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeCornerImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;aspect-ratio:2/3;position:relative;overflow:hidden"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"\n                  onclick="tapSlot(${i},'corner')">\n                  <img src="${cornerGhosts[i]}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.7;pointer-events:none">\n                  <div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:8px;left:10px;background:rgba(255,255,255,0.82);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:left"><span style="display:block;font-size:11px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase">${cornerLabels[i]}</span><span style="display:block;font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</span></span></div>\n                 </div>`;
   }).join("")}\n        </div>\n        <input id="corner-photo-input" type="file" accept="image/*" multiple onchange="handleCornerImages(event)" style="display:none">${!formData.labelDetected ? `<div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin:16px 0 8px">INTERIOR COVERS</div><div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Full spreads of the interior front and interior back, where defects can sometimes hide.</div><div style="display:grid;grid-template-columns:1fr;gap:6px">${[0,1].map(i => { const icLabels = ["Interior Front","Interior Back"]; const _icimg = (formData.interiorCoverImages || [])[i]; return _icimg ? `<div class="drag-slot" style="aspect-ratio:3/2" onclick="tapSlot(${i},'interiorCover')"><img src="${_icimg}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-edit" onclick="event.stopPropagation();openCropper('interiorCover',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button><button class="slot-x" onclick="event.stopPropagation();removeInteriorCoverImg(${i})">×</button></div>` : `<div class="drag-slot" style="padding:0;background:none;aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapSlot(${i},'interiorCover')"><img src="assets/ghosts/Interior_${i === 0 ? 'Front' : 'Back'}_Cover.jpg" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.7;pointer-events:none"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:8px;${i === 0 ? "left:10px" : "right:10px"};background:rgba(255,255,255,0.82);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:${i === 0 ? "left" : "right"}"><span style="display:block;font-size:11px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase">${icLabels[i]}</span><span style="display:block;font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</span></span></div></div>`; }).join("")}</div><input id="interior-cover-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorCoverImages(event)" style="display:none">` : ""}\n        ${(() => {
+    if (formData._conciergeRun && !_assessed) return _conciergeBtnHtml();
     const alreadyRun = !!formData.highGradeTier;
     const cornerCount = (formData.cornerImages || []).filter(Boolean).length;
     // S20 (#36): raw books also capture 2 interior covers (6 total); slabbed books
@@ -17075,6 +17189,7 @@ function renderForm() {
     return ""; // S20 (#46): collapsed add-flow pill removed; the segmented pill renders above the image slots in every form state.
   })()}\n    <div style="display:flex;justify-content:center;margin-top:8px">\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="enterManualMode()" style="width:75%">Enter Manually</button>\n    </div>\n    `}\n  </div>`;
   document.getElementById("main").innerHTML = html;
+  renderBottomBar();
   _maybeRefreshLocalPG(); // S21: refresh the on-device Photograder pre-check if images changed
 }
 
@@ -17741,7 +17856,10 @@ function openCropper(type, index) {
     // NOT to cards (aspect-locked 5/7, different shape) and NOT to the macro
     // slots - corners, spine, signature, coupon, insert have no book outline
     // to find, and a bounding box round a close-up is actively wrong.
-    const _cropAutoOK = !(formData.type === "card" || !!formData._isCard) && type === "main";
+    // v6.78: and the Deep's two interior-cover spreads. runCropperSequence has
+    // opened the cropper on them since S22 for exactly this, but this test
+    // still said main only, so they always came up uncropped.
+    const _cropAutoOK = !(formData.type === "card" || !!formData._isCard) && (type === "main" || type === "interiorCover");
     _cropperInstance = new Cropper(img, {
       aspectRatio: _cropCardFB ? 5/7 : NaN,
       // S22: viewMode 2 (whole image fits WITHIN the frame) instead of 1 (image
@@ -18190,6 +18308,10 @@ async function detectSlabFromDataUrl(dataUrl) {
       const _cg = conciergeGate(r && r.title, r && r.issue);
       console.log("[concierge] " + JSON.stringify(_cg));
       formData._conciergeGate = _cg;
+      // v6.78: kept on the book, so "why was I not offered it?" can be read in
+      // admin instead of needing the phone's console. What the cover read
+      // said, the tier, and the reason - nothing else.
+      formData.conciergeGate = { title: _cg.title || null, issue: _cg.issue || null, tier: _cg.tier || 0, reason: _cg.reason || "", at: (new Date).toISOString() };
     } catch (e) { console.warn("[concierge] gate threw:", e); }
     // Reflow: a detected raw card switches the add form to the 4 card slots
     // (Full Front / Full Back / Top Front Macro / Bottom Front Macro). The photo
@@ -20450,7 +20572,9 @@ async function cameraCapture() {
       // shooting session and a second payment decision, the friction this is
       // meant to remove.
       try {
-        if (conciergeShouldOffer(_slab) && await conciergeOffer(formData._conciergeGate)) {
+        const _offer = conciergeShouldOffer(_slab);
+        if (formData.conciergeGate) formData.conciergeGate.offered = _offer;
+        if (_offer && await conciergeOffer(formData._conciergeGate)) {
           _conciergeCapture = true;
           formData._conciergeRun = true;
         }
@@ -20634,7 +20758,7 @@ function _cameraChainNext() {
     // v6.66: the accepted offer turns the 4-slot Main walkthrough into the full
     // 10, in one continuous session. Same chain Post-Cleaning uses; the only
     // difference is which arrays "empty" is judged against.
-    if (_k === "main") { _nextKind = "corner"; nextSlots = _conciergeEmptySlots("corner"); }
+    if (_k === "main") { _nextKind = "corner"; nextSlots = _cornerShootOrder(_conciergeEmptySlots("corner")); }
     else if (_k === "corner" && !formData.labelDetected) { _nextKind = "interiorCover"; nextSlots = _conciergeEmptySlots("interiorCover"); }
     if (!_nextKind || !nextSlots.length) return false;
   } else if (_cleanCapture) {
@@ -20642,7 +20766,7 @@ function _cameraChainNext() {
     // slot n re-shoots n through 10 (Matt). Empty-only skipped photos the user
     // had just chosen to retake.
     const _all = k2 => Array.from({ length: CLEAN_CAPTURE_COUNT[k2] }, (_, j) => j);
-    if (_k === "main") { _nextKind = "corner"; nextSlots = _all("corner"); }
+    if (_k === "main") { _nextKind = "corner"; nextSlots = _cornerShootOrder(_all("corner")); }
     else if (_k === "corner" && !formData.labelDetected) { _nextKind = "interiorCover"; nextSlots = _all("interiorCover"); }
     if (!_nextKind || !nextSlots.length) return false;
   } else {
@@ -20713,24 +20837,17 @@ async function cameraFinish() {
     _scrollToCaptureSection(_wasClean ? "clean" : _lastKind);
   } catch (e) { /* never let a scroll break the capture */ }
 
-  // v6.66, concierge step 5: the user already agreed to 2 credits in the modal,
-  // so there is no second tap. Main starts itself; the Deep follows from
-  // _completeAssessmentInner when the Main's COMPLETE is tapped, which keeps
-  // the whole thing on the one pair of result panels the user expects.
+  // v6.78, Matt: the capture does NOT start the assessment. The form now shows
+  // all ten photos and one MAIN + DEEP button below them; the user can replace
+  // any photo first. A short capture keeps the flag, so the button shows its
+  // count and the missing slots can be filled by tapping them.
   if (_wasConcierge && formData._conciergeRun) {
-    const _m = (formData.images || []).filter(Boolean).length;
-    const _c = (formData.cornerImages || []).filter(Boolean).length;
-    if (_m >= 4 && _c >= 4) {
-      console.log("[concierge] capture complete - starting Main, Deep to follow");
-      try { await assessGrade(); }
-      catch (e) { console.warn("[concierge] Main failed to start:", e); formData._conciergeRun = false; }
-    } else {
-      // Shot short. Nothing is charged and nothing is lost - the ordinary
-      // buttons are all still there - but the chained Deep must not fire off a
-      // partial set later, so the flag comes off.
-      console.log("[concierge] capture incomplete (" + _m + " main, " + _c + " corner) - standing down");
-      formData._conciergeRun = false;
-    }
+    console.log("[concierge] capture done - waiting for MAIN + DEEP");
+    try { renderForm(); } catch (e) {}
+    setTimeout(() => {
+      const cb = document.getElementById("concierge-btn");
+      if (cb) cb.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 160);
   }
 }
 
@@ -20821,6 +20938,14 @@ async function runCropperSequence(captures, kind) {
     }
     list[cap.slot] = finalUrl;
     formData[listKey] = list;
+    // v6.78: a NEW photo in this slot. Forget the last one's original and crop
+    // box, or the cropper reopens on the old photo and skips auto-crop (it
+    // treats a stored box as "the user already framed this").
+    try {
+      const _ck = kind + ":" + cap.slot;
+      if (formData._cropOriginals) delete formData._cropOriginals[_ck];
+      if (formData._cropBoxes) delete formData._cropBoxes[_ck];
+    } catch (e) {}
     // S20: do NOT auto-populate Restoration slots when capturing Full images.
     // That made the Restoration Check slots appear pre-filled before the user
     // ever opened the check. v6.24: the reveal step it referred to is gone, and
