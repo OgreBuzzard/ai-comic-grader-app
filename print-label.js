@@ -3679,6 +3679,25 @@ async function generatePDF(comics, modal, intent) {
         useCORS: true,
         backgroundColor: '#d4d9be',
         logging: false,
+        // v6.80 - CLONE ONLY THE LABEL. html2canvas copies the WHOLE page into
+        // a hidden iframe and waits for everything in it to load before it
+        // draws. Behind the label viewer sits Detail or Edit with up to ten
+        // full-size cover photos, so the copy carried all of them. On an iPad
+        // (Safari, PWA, 22 Nov) that wait ran past the 20s limit and the user
+        // got "Label 1 of 1 never finished rendering". The label needs none of
+        // it: keep <head> (the styles and fonts), the off-screen container the
+        // labels are built in, and its ancestors - skip everything else.
+        // Our best explanation, not confirmed on that iPad.
+        ignoreElements: (el) => {
+          try {
+            if (!el || el.nodeType !== 1) return false;
+            if (el === offscreen || el.contains(offscreen) || offscreen.contains(el)) return false;
+            const t = el.tagName;
+            if (t === 'HEAD' || t === 'STYLE' || t === 'LINK' || t === 'META' || t === 'TITLE' || t === 'BASE') return false;
+            if (el.parentNode && el.parentNode.nodeName === 'HEAD') return false;
+            return true;
+          } catch (e) { return false; }
+        },
         // S14 FIX (round 2) — the real reason condensed text was still
         // wrong in the PDF. html2canvas renders into a CLONED document
         // in a sandboxed iframe. Web fonts referenced by a parent <link>

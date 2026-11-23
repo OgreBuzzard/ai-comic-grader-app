@@ -2514,7 +2514,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.79";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.80";
       // v6.46: the GRADING epoch - the version the assessment last actually
       // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
       // every change; this one does not. The label stamps THIS, because "V6.45"
@@ -2525,7 +2525,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.79");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.80");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -9341,7 +9341,10 @@ function _exPlus(ctx, numRightX, midY, limitX, color, sizePx) {
   ctx.textAlign = "left"; ctx.fillStyle = color;
   ctx.fillText("(+)", 0, 0);
   ctx.restore();
-  ctx.textAlign = "left";
+  // v6.80: was `ctx.textAlign = "left"` here, which leaked into every caller
+  // that drew centred text after the (+) - the Summary Image's PAGE QUALITY
+  // header and pill text came out shifted right. save/restore above already
+  // puts textAlign back to what the caller had.
 }
 
 // ── RoboScoreV3.scoreBox, ported to canvas ─────────────────────────────────
@@ -9975,6 +9978,11 @@ function _exDrawGradeStack(ctx, f, x, y, w, h) {
   if (f.atCeiling) _exPlus(ctx, cx + halfNum, numMid + numPx * 0.1,
                            cx + badge / 2 - P(4), "rgba(255,255,255,0.9)", numPx / 2.8);
   cy += badge;
+  // v6.80: _exPlus leaves textAlign at "left". On a book at the Main ceiling
+  // (the (+) is drawn) PAGE QUALITY and the pill text were then drawn
+  // LEFT-aligned from the centre line - off to the right, and the header ran
+  // out of the column. Our test renders never had a (+), so it never showed.
+  ctx.textAlign = "center";
 
   if (f.pageQuality) {
     // v6.62: PAGE QUALITY is the same size as PREDICTED / GRADE, with room
@@ -15634,7 +15642,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.79"),
+      appVersion: (window.RG_GRADING_VERSION || "6.80"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
