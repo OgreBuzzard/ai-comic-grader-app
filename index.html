@@ -955,12 +955,23 @@ onAuthStateChanged(auth, async user => {
     #bottom-bar .bb-c1 { justify-content: flex-start; }
     #bottom-bar .bb-c2 { justify-content: flex-start; }
     #bottom-bar .bb-c3 { justify-content: flex-start; }
-    #bottom-bar .bb-c4 { justify-content: flex-end; padding-right: 4px; }
+    #bottom-bar .bb-c4 { justify-content: flex-end; }
+    /* v6.80, Matt: Back / Edit / Save / PRINT were sized to their TEXT, so on
+       a narrower phone - or before Barlow Condensed had loaded, when the
+       fallback face is much wider - the words ran past the edge of the box,
+       and the same button was a different width in Detail and Edit. Every
+       text button now FILLS its quarter of the bar (same size in every view),
+       with the text centred and small side padding. Back lost its arrow. */
+    .bb-btn, #bb-print-go {
+      box-sizing: border-box; width: 100%; height: 48px; min-width: 0;
+      padding: 0 4px; border-radius: 12px; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; text-align: center;
+      font: 800 17px/1 'Barlow Condensed', sans-serif; letter-spacing: 1px;
+      white-space: nowrap; overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
     .bb-btn {
-      height: 48px; min-width: 0; padding: 0 14px; border-radius: 12px; cursor: pointer;
       border: 1.5px solid #c8c0b4; background: #ffffff; color: #2a2724;
-      font: 800 16px/1 'Barlow Condensed', sans-serif; letter-spacing: 1px;
-      -webkit-tap-highlight-color: transparent; white-space: nowrap;
     }
     .bb-btn:disabled { opacity: 0.4; cursor: default; }
     .bb-btn.bb-gold { background: #c8a96e; border-color: #a88a4e; color: #1a1008; }
@@ -979,10 +990,9 @@ onAuthStateChanged(auth, async user => {
       box-shadow: 0 0 0 2px #fff;
     }
     #bb-print-go {
-      height: 48px; width: 100%; max-width: 104px; padding: 0 18px; border-radius: 12px; cursor: pointer;
       border: 1.5px solid #a8701a;
       background: linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);
-      color: #0d0d0f; font: 800 17px/1 'Barlow Condensed', sans-serif; letter-spacing: 1.5px;
+      color: #0d0d0f;
     }
     #bb-print-go:disabled { opacity: 0.4; cursor: default; }
     /* The label thumbnail: the real Square label, drawn by print-label.js. */
@@ -5571,7 +5581,7 @@ function renderBottomBar() {
         c[3].innerHTML = graded ? `<button type="button" id="bb-print-go" onclick="printQueueSheet()" ${n ? "" : "disabled"}>PRINT</button>` : "";
       } else {
         const id = it ? esc(it.id) : "";
-        c[0].innerHTML = `<button type="button" class="bb-btn" onclick="${isEdit ? "cancelForm()" : "showList()"}">\u2190 Back</button>`;
+        c[0].innerHTML = `<button type="button" class="bb-btn" onclick="${isEdit ? "cancelForm()" : "showList()"}">Back</button>`;
         if (isEdit) {
           c[1].innerHTML = `<button type="button" class="bb-btn bb-gold" id="save-btn-top" onclick="submitForm()" ${saveOff ? "disabled" : ""}>${formData && formData.id ? "Save" : "Add"}</button>`;
         } else {
