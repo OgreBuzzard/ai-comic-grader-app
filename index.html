@@ -994,7 +994,10 @@ onAuthStateChanged(auth, async user => {
       font: 800 12px/20px 'Barlow Condensed', sans-serif; text-align: center;
       box-shadow: 0 0 0 2px #fff;
     }
+    /* v6.83: PRINT SHEET / PRINT SINGLE on two lines, so the button keeps its
+       quarter-width and the words stay large. */
     #bb-print-go {
+      white-space: normal; font-size: 15px; line-height: 1.05;
       border: 1.5px solid #a8701a;
       background: linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);
       color: #0d0d0f;
@@ -2533,7 +2536,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.82";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.83";
       // v6.46: the GRADING epoch - the version the assessment last actually
       // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
       // every change; this one does not. The label stamps THIS, because "V6.45"
@@ -2544,7 +2547,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.82");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.83");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -5587,7 +5590,7 @@ function renderBottomBar() {
         c[0].innerHTML = "";
         c[1].innerHTML = "";
         c[2].innerHTML = graded ? `<button type="button" id="bb-print-toggle" class="${on ? "on" : ""}" aria-pressed="${on}" onclick="togglePrintModeFromBar()" aria-label="Show print queue buttons" title="Show or hide the add-to-print buttons">${on ? PRINT_ICON_SVG.replace("stroke:#7aa838", "stroke:#ffffff") : PRINT_ICON_SVG}<span id="bb-print-count" style="${n ? "" : "display:none"}">${n}</span></button>` : "";
-        c[3].innerHTML = graded ? `<button type="button" id="bb-print-go" onclick="printQueueSheet()" ${n ? "" : "disabled"}>PRINT</button>` : "";
+        c[3].innerHTML = graded ? `<button type="button" id="bb-print-go" onclick="printQueueSheet()" ${n ? "" : "disabled"}>PRINT<br>SHEET</button>` : "";
       } else {
         const id = it ? esc(it.id) : "";
         c[0].innerHTML = `<button type="button" class="bb-btn" onclick="${isEdit ? "cancelForm()" : "showList()"}">Back</button>`;
@@ -5596,8 +5599,11 @@ function renderBottomBar() {
         } else {
           c[1].innerHTML = isSample ? "" : `<button type="button" class="bb-btn bb-gold" onclick="showEdit('${id}')">Edit</button>`;
         }
-        c[2].innerHTML = labelOk ? `<button type="button" id="bb-label-thumb" ${isEdit ? "disabled" : `onclick="printLabel('${id}')"`} aria-label="Label preview"><i id="bb-label-slot"></i></button>` : "";
-        c[3].innerHTML = (isEdit || labelOk) ? `<button type="button" id="bb-print-go" ${isEdit || !labelOk ? "disabled" : `onclick="printLabel('${id}')"`}>PRINT</button>` : "";
+        // v6.83, Matt: the label thumbnail is gone - beside Edit it read as part
+        // of Edit, not of PRINT. The button now says what it prints instead:
+        // PRINT SHEET (List, the queue) / PRINT SINGLE (this one book).
+        c[2].innerHTML = "";
+        c[3].innerHTML = (isEdit || labelOk) ? `<button type="button" id="bb-print-go" ${isEdit || !labelOk ? "disabled" : `onclick="printLabel('${id}')"`}>PRINT<br>SINGLE</button>` : "";
         _bbThumbKey = "";
       }
     }
@@ -6441,6 +6447,12 @@ async function buyCredits(pkg) {
     window.rgPopup("Please sign in to purchase credits.", { type: "info" });
     return;
   }
+  // v6.83: no credit packs while Unlimited is on (the Buy screen greys them
+  // out; this catches any other route in).
+  if (pkg !== "unlimited" && typeof _unlimitedOn === "function" && _unlimitedOn()) {
+    appAlert("You have Unlimited Grading. You will be able to purchase credits again once the time runs out.");
+    return;
+  }
   try {
     const token = await window._currentUser.getIdToken();
     const resp = await fetch("/api/checkout", {
@@ -6576,13 +6588,15 @@ document.addEventListener("drop", function (e) {
 // the week, ticking every second. Before the first assessment it shows the
 // full 168h 00m 00s, standing still. When the week ends it disappears and the
 // coin goes back to the balance. Hidden while the header is loading.
-// v6.82: "XXd XXh XXm XXs" (Matt). Days unpadded (15d ... 0d); hours,
-// minutes and seconds always two digits so the width barely moves.
+// v6.83: "XXd XXh XXm" - no seconds (Matt: "too much pressure"). Days
+// unpadded, hours and minutes two digits. Rounded UP to the minute, so it
+// reads 15d 00h 00m at the start and never shows 0d 00h 00m while time is
+// still left.
 function _unlimitedFmt(ms) {
-  const t = Math.max(0, Math.floor(ms / 1000));
-  const d = Math.floor(t / 86400), h = Math.floor((t % 86400) / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  const t = Math.max(0, Math.ceil(ms / 60000));
+  const d = Math.floor(t / 1440), h = Math.floor((t % 1440) / 60), m = t % 60;
   const p2 = n => String(n).padStart(2, "0");
-  return d + "d " + p2(h) + "h " + p2(m) + "m " + p2(sec) + "s";
+  return d + "d " + p2(h) + "h " + p2(m) + "m";
 }
 let _unlimitedTimerWasOn = false;
 function _unlimitedTimerTick() {
@@ -6597,6 +6611,8 @@ function _unlimitedTimerTick() {
   const on = !!text && !loading;
   el.style.display = on ? "" : "none";
   if (on && el.textContent !== text) el.textContent = text;
+  const bt = document.getElementById("buy-unlimited-timer");
+  if (bt) bt.textContent = text;
   // v6.82: while the countdown shows, the coin and Buy ride up a little and
   // the countdown is larger (CSS: #header-left-group.unl-on).
   const grp = document.getElementById("header-left-group");
@@ -6612,8 +6628,21 @@ setInterval(_unlimitedTimerTick, 1000);
 
 // The Buy screen card. Hidden unless the switch is on and the sale is open.
 function _refreshUnlimitedCard() {
+  // v6.83, Matt: while Unlimited is on (bought, waiting or running), credit
+  // packs cannot be bought. The packs are greyed out and a note with the
+  // countdown takes the top of the screen.
+  const on = _unlimitedOn();
+  const lock = document.getElementById("buy-unlimited-lock");
+  if (lock) lock.style.display = on ? "" : "none";
+  document.querySelectorAll('#buy-credits-modal button[onclick^="buyCredits("]').forEach(b => {
+    b.disabled = on;
+    b.style.opacity = on ? "0.4" : "";
+    b.style.cursor = on ? "default" : "pointer";
+  });
+  try { _unlimitedTimerTick(); } catch (e) {}
   const card = document.getElementById("unlimited-buy-card");
   if (!card) return;
+  if (on) { card.style.display = "none"; return; }
   const show = UNLIMITED_BUY_ENABLED && _unlimitedOnSale();
   card.style.display = show ? "flex" : "none";
   if (!show) return;
@@ -7151,10 +7180,15 @@ function renderList() {
   const _LABEL_INK = "#0d0d0f";
   const hasRealBooks = items.some(c => c.id !== SAMPLE_COMIC_ID);
   let html = ``;
-  if (_mixed) html += _typeFilterChips();
   // v6.77, Matt: only from FOUR books. Three come free and many people stop
   // there; they do not need the extra control.
+  // v6.83: the sort pill comes FIRST, above the Comics/Cards chips.
   if (_realItems.length >= 4) html += _sortToggle();
+  // v6.83, Matt: Comics/Cards chips commented out - cards are sidelined and
+  // unannounced. Both filters stay on (_showComics/_showCards default true
+  // and nothing else sets them), so no book can be hidden by a chip nobody
+  // can see. To restore, uncomment:
+  // if (_mixed) html += _typeFilterChips();
   const anyBooks = sections.some(s => s.titles.length > 0);
   if (!anyBooks) {
     html += ``;
@@ -15700,7 +15734,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.82"),
+      appVersion: (window.RG_GRADING_VERSION || "6.83"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -21997,6 +22031,11 @@ initFirebase();
   <div style="background:#fff;border-radius:16px;padding:20px 20px 18px;max-width:360px;width:100%;max-height:calc(100vh - 40px);overflow-y:auto;box-sizing:border-box;box-shadow:0 8px 40px rgba(0,0,0,0.3)">
     <h2 style="margin:0 0 4px;font-size:20px;color:#1a1008">Buy Assessments</h2>
     <p style="margin:0 0 12px;font-size:13px;color:#6a5a4a">One credit per assessment.</p>
+    <!-- v6.83: shown instead of a working Buy screen while Unlimited is on. -->
+    <div id="buy-unlimited-lock" style="display:none;margin:0 0 12px;padding:12px 14px;border-radius:10px;background:#12200a;border:2px solid #7aa838;text-align:center">
+      <div style="font-size:14px;line-height:1.45;color:#e8f5d8">You have Unlimited Grading. You will be able to purchase credits again once the time runs out.</div>
+      <div id="buy-unlimited-timer" style="margin-top:8px;font:700 22px/1 'Barlow Condensed',sans-serif;letter-spacing:0.5px;color:#b8e07a;font-variant-numeric:tabular-nums"></div>
+    </div>
     <div style="display:flex;flex-direction:column;gap:8px">
       <!-- v6.79 UNLIMITED: shown only when UNLIMITED_BUY_ENABLED is true (see
            the UNLIMITED GRADING block in the script) and the sale is open. -->

@@ -57,6 +57,15 @@ export default async function handler(req, res) {
       if (st === 'pending' || st === 'active') return res.status(400).json({ error: 'unlimited_active', message: 'You already have an Unlimited week. You can buy another when it ends.' });
     } catch (e) { console.warn('[checkout] unlimited state check failed:', e && e.message); }
   }
+  // v6.83: no credit packs while an Unlimited period is pending or running.
+  if (pkg !== 'unlimited') {
+    try {
+      const { getFirestore } = await import('firebase-admin/firestore');
+      const u = (await getFirestore().collection('users').doc(userId).get()).data() || {};
+      const st = unlimitedState(u).status;
+      if (st === 'pending' || st === 'active') return res.status(400).json({ error: 'unlimited_active', message: 'You have Unlimited Grading. You will be able to purchase credits again once the time runs out.' });
+    } catch (e) { console.warn('[checkout] unlimited check failed (allowing):', e && e.message); }
+  }
   const selected = pkg === 'unlimited'
     ? { credits: 0, priceId: process.env.STRIPE_PRICE_UNLIMITED, name: 'Unlimited Grading' }
     : PACKAGES[pkg];
