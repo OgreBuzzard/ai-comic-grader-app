@@ -23,7 +23,9 @@ const user = (x) => ({ unlimited: { purchasedAt: new Date(now - 1e6).toISOString
 ok('no purchase -> none', U.unlimitedState({}, now).status === 'none');
 ok('bought, unused -> pending', U.unlimitedState(user({}), now).status === 'pending');
 ok('started 2 days ago -> active', U.unlimitedState(user({ startedAt: new Date(now - 48 * H).toISOString() }), now).status === 'active');
-ok('started 8 days ago -> ended', U.unlimitedState(user({ startedAt: new Date(now - 8 * 24 * H).toISOString() }), now).status === 'ended');
+ok('started 8 days ago -> still active (15-day period)', U.unlimitedState(user({ startedAt: new Date(now - 8 * 24 * H).toISOString() }), now).status === 'active');
+ok('started 16 days ago -> ended', U.unlimitedState(user({ startedAt: new Date(now - 16 * 24 * H).toISOString() }), now).status === 'ended');
+ok('ends exactly 360 hours after the start', U.unlimitedState(user({ startedAt: new Date(now - 10 * H).toISOString() }), now).endsAt === now - 10 * H + 360 * H);
 ok('unused past day 30 -> auto-started on day 30', (() => { const s = U.unlimitedState(user({ startBy: new Date(now - 2 * 24 * H).toISOString() }), now); return s.status === 'active' && s.autoStarted; })());
 ok('refunded -> none', U.unlimitedState(user({ revokedAt: new Date().toISOString() }), now).status === 'none');
 ok('sale window', !U.unlimitedOnSale(Date.parse('2026-11-26T12:00:00Z')) && U.unlimitedOnSale(Date.parse('2026-11-27T12:00:00Z')) && U.unlimitedOnSale(Date.parse('2026-12-31T20:00:00Z')) && !U.unlimitedOnSale(Date.parse('2027-01-01T09:00:00Z')));
@@ -83,7 +85,7 @@ const startedUser = user({ startedAt: new Date(now - 2 * H).toISOString() });
   ok('grant while pending is blocked', U.grantUnlimitedInTx(tx, {}, { exists: true, data: () => user({}) }, {}) === 'blocked_active');
   ok('grant while running is blocked', U.grantUnlimitedInTx(tx, {}, { exists: true, data: () => startedUser }, {}) === 'blocked_active');
   ok('grant after a refund is blocked', U.grantUnlimitedInTx(tx, {}, { exists: true, data: () => ({ unlimitedBlocked: true }) }, {}) === 'blocked_refund');
-  const ended = user({ startedAt: new Date(now - 9 * 24 * H).toISOString(), uses: 40 });
+  const ended = user({ startedAt: new Date(now - 16 * 24 * H).toISOString(), uses: 40 });
   writes.length = 0;
   ok('a new week after the last one ended', U.grantUnlimitedInTx(tx, {}, { exists: true, data: () => ended }, { purchaseId: 'y' }) === 'granted' && writes[0].unlimitedHistory.length === 1);
 }

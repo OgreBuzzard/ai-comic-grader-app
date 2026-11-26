@@ -2251,6 +2251,33 @@ function showTimingDetail(t) {
   document.getElementById('timing-close').onclick = () => modal.remove();
 }
 
+// v6.81: Unlimited controls on the user page. Grant = a week waiting for the
+// first assessment (as if bought); Grant + start now = the clock runs from
+// now; End = stops it (no refund block); Clear = as if never bought.
+async function _unlAdminWire(uid) {
+  const st = document.getElementById('unl-admin-status');
+  const show = (r) => {
+    if (!st) return;
+    const u = r.unlimited || {};
+    st.innerHTML = `Unlimited: <b>${escapeHtml(r.status || 'none')}</b>`
+      + (r.endsAt ? ` · ends ${escapeHtml(_fmtDateTime(r.endsAt))}` : '')
+      + (u.uses ? ` · ${u.uses} assessments` : '')
+      + (u.source ? ` · ${escapeHtml(u.source)}` : '')
+      + (r.blocked ? ' · <span style="color:#e07a6a">blocked (refund)</span>' : '');
+  };
+  try { show(await api('/api/unlimited_set?uid=' + encodeURIComponent(uid))); }
+  catch (e) { if (st) st.textContent = 'Unlimited: ' + (e.message || e); }
+  document.querySelectorAll('.unl-act').forEach(b => {
+    b.onclick = async () => {
+      const act = b.dataset.act;
+      const body = act === 'grant_now' ? { uid, action: 'grant', startNow: true } : { uid, action: act };
+      if (st) st.textContent = 'Working…';
+      try { show(await api('/api/unlimited_set', { method: 'POST', body })); }
+      catch (e) { if (st) st.textContent = 'Failed: ' + (e.message || e); }
+    };
+  });
+}
+
 async function showUser(uid) {
   state.view = 'user';
   state.selectedUid = uid;
@@ -2321,6 +2348,16 @@ function renderUserDetail(user, items, publicRate) {
         ${user.createdAt ? `<span class="pill">Joined: <strong>${new Date(user.createdAt).toLocaleDateString()}</strong></span>` : ''}
         <span class="pill" style="${user.trainingOptIn ? 'color:var(--accent);' : 'color:var(--text-dim);'}">Training: <strong>${user.trainingOptIn ? 'opt-in' : 'opt-out'}</strong></span>
         ${publicRate ? `<span class="pill">Public listings: <strong>${publicRate.publicCount}/${publicRate.totalCount}</strong> (${publicRate.percent}%)</span>` : ''}
+      </div>
+      <!-- v6.81: Unlimited on this account (admin/api/unlimited_set.js). -->
+      <div id="unl-admin" style="margin-top:10px;padding:8px 10px;border:1px solid #2a4a2a;border-radius:8px;background:#0f1610;font-size:12px;color:#cde">
+        <div id="unl-admin-status">Unlimited: loading…</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <button class="unl-act" data-act="grant" style="padding:5px 10px;font-size:11px;border:1px solid #3a6a3a;border-radius:7px;background:var(--panel-2);color:#cde;cursor:pointer">Grant week</button>
+          <button class="unl-act" data-act="grant_now" style="padding:5px 10px;font-size:11px;border:1px solid #3a6a3a;border-radius:7px;background:var(--panel-2);color:#cde;cursor:pointer">Grant + start now</button>
+          <button class="unl-act" data-act="end" style="padding:5px 10px;font-size:11px;border:1px solid #6a4a2a;border-radius:7px;background:var(--panel-2);color:#cde;cursor:pointer">End week</button>
+          <button class="unl-act" data-act="clear" style="padding:5px 10px;font-size:11px;border:1px solid #6a2a2a;border-radius:7px;background:var(--panel-2);color:#cde;cursor:pointer">Clear (and unblock)</button>
+        </div>
       </div>
     </div>
     <h3 class="section-h">Items (${items.length})</h3>
@@ -2393,6 +2430,7 @@ function renderUserDetail(user, items, publicRate) {
       renderUserDetail(cached.user, cached.items, cached.publicRate);
     };
   } else {
+    _unlAdminWire(user.uid);
     const pill = document.getElementById('credits-pill');
     if (pill) pill.onclick = () => {
       state.creditsEditOpen = true;

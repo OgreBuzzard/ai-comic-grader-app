@@ -50,7 +50,7 @@ export default async function handler(req, res) {
       const startBy = Date.parse(x.startBy || '') || null;
       let start = x.startedAt ? Date.parse(x.startedAt) : null;
       if (!start && startBy && now >= startBy) start = startBy;
-      const end = start ? start + 168 * 3600 * 1000 : null;
+      const end = start ? start + 360 * 3600 * 1000 : null;   // v6.82: 15 days
       const status = x.revokedAt ? 'refunded' : !start ? 'not started' : now < end ? 'running' : 'ended';
       return {
         uid: d.id, name: u.displayName || u.email || d.id, email: u.email || null, transferCode: u.transferCode || null,
